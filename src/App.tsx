@@ -24,7 +24,6 @@ import Exif from 'react-native-exif';
 const MainLayout = () => {
   const isDarkMode = useColorScheme() === 'dark';
   const { bottom, left, right, top } = useSafeAreaInsets();
-  console.log('bottom, left, right, top : ', bottom, left, right, top );
 	
 
   // States for camera and parameter management
@@ -91,22 +90,46 @@ const MainLayout = () => {
         });
         const uri = photo.path;
         Exif.getExif(uri)
-          .then(exifData => {
-            console.log('EXIF Data:', exifData.exif['{Exif}']);
-            const focalLength35mm = exifData.exif['{Exif}']?.FocalLenIn35mmFilm;
-            if (typeof focalLength35mm === 'number') {
-              setEquivalentFocalLength(focalLength35mm);
-              setIsPhotoTaken(true);
-              if (device) {
-                const zoomFactor = selectedLens / focalLength35mm;
-                const adjustedZoom = Math.max(
-                  device.minZoom || 1,
-                  Math.min(zoomFactor, device.maxZoom || 10),
-                );
-                setZoom(adjustedZoom);
+          .then((exifData: Record<string, unknown >) => {
+            if (
+              exifData &&
+              typeof exifData.exif === 'object' &&
+              exifData.exif !== null &&
+              '{Exif}' in exifData.exif &&
+              typeof (exifData.exif as Record<string, unknown>)['{Exif}'] === 'object'
+            ) {
+              console.log(
+                'EXIF Data:',
+                exifData.exif,
+              );
+              const focalLength35mm = (exifData.exif as Record<string, Record<string, unknown>>)['{Exif}']?.FocalLenIn35mmFilm;
+              if (typeof focalLength35mm === 'number') {
+                setEquivalentFocalLength(focalLength35mm);
+                setIsPhotoTaken(true);
+                if (device) {
+                  const zoomFactor = selectedLens / focalLength35mm;
+                  const adjustedZoom = Math.max(
+                    device.minZoom || 1,
+                    Math.min(zoomFactor, device.maxZoom || 10),
+                  );
+                  setZoom(adjustedZoom);
+                }
+              } else {
+                console.log('FocalLengthIn35mmFilm not found in EXIF');
+                // Fallback value for ultra-wide camera
+                if (selectedCameraType === 'ultra-wide-angle-camera') {
+                  setEquivalentFocalLength(13); // Typical value for ultra-wide
+                  setIsPhotoTaken(true);
+                  const zoomFactor = selectedLens / 13;
+                  const adjustedZoom = Math.max(
+                    device?.minZoom || 1,
+                    Math.min(zoomFactor, device?.maxZoom || 10),
+                  );
+                  setZoom(adjustedZoom);
+                }
               }
             } else {
-              console.log('FocalLengthIn35mmFilm not found in EXIF');
+              console.log('EXIF data structure unexpected:', exifData);
               // Fallback value for ultra-wide camera
               if (selectedCameraType === 'ultra-wide-angle-camera') {
                 setEquivalentFocalLength(13); // Typical value for ultra-wide
@@ -198,7 +221,7 @@ const MainLayout = () => {
         paddingRight: right,
         paddingTop: top || 16,
         paddingBottom: bottom,
-				columnGap: 12,
+        columnGap: 12,
       }}>
       <View style={[styles.cameraContainer]}>
         {equivalentFocalLength === null && (
