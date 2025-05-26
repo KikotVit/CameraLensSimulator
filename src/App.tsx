@@ -1,214 +1,207 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import { Camera, useCameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+  useColorScheme,
+  TouchableOpacity,
+  Dimensions,
+} from 'react-native';
+import { Camera, useCameraDevice, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
 import { Picker } from '@react-native-picker/picker';
 
-const CAMERAS = [
-  { label: 'Canon R8 (Full Frame)', cropFactor: 1.0 },
-  { label: 'Canon R7 (APS-C)', cropFactor: 1.6 },
-];
+function App(): React.JSX.Element {
+  const isDarkMode = useColorScheme() === 'dark';
+  
 
-const LENS_OPTIONS = [
-  { label: '24mm', focalLength: 24 },
-  { label: '35mm', focalLength: 35 },
-  { label: '50mm', focalLength: 50 },
-  { label: '85mm', focalLength: 85 },
-];
+  // Стани для управління камерою та параметрами
+  const [focalLength, setFocalLength] = useState<number | null>(null);
+  const [sensorDiagonal, setSensorDiagonal] = useState<number>(7.356);
+  const [equivalentFocalLength, setEquivalentFocalLength] = useState<number | null>(null);
+  const [selectedLens, setSelectedLens] = useState<number>(24);
+  const [zoom, setZoom] = useState<number>(1);
+  const [aspectRatio, setAspectRatio] = useState<string>('4:3');
 
-const ASPECT_RATIOS = [
-  { label: '4:3', value: 4 / 3 },
-  { label: '16:9', value: 16 / 9 },
-  { label: '1:1', value: 1 },
-];
+  const cameraRef = useRef<Camera | null>(null);
+  const { hasPermission, requestPermission } = useCameraPermission();
 
-export default function App() {
-  const device = useCameraDevice('back');
-  const [hasPermission, setHasPermission] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const [phoneFocalLength, setPhoneFocalLength] = useState(26); // Example focal length
-  const [selectedCamera, setSelectedCamera] = useState(CAMERAS[0].label);
-  const [selectedLens, setSelectedLens] = useState(LENS_OPTIONS[0].label);
-  const [selectedFormat, setSelectedFormat] = useState<CameraDeviceFormat | undefined>(undefined);
-  const [selectedAspectRatio, setSelectedAspectRatio] = useState(ASPECT_RATIOS[0].label);
-  const [orientation, setOrientation] = useState('portrait');
-
-  // Handle orientation changes
+  // Запит дозволу на використання камери
   useEffect(() => {
-    const updateOrientation = () => {
-      const { width, height } = Dimensions.get('window');
-      setOrientation(width > height ? 'landscape' : 'portrait');
-    };
-    updateOrientation();
-    const subscription = Dimensions.addEventListener('change', updateOrientation);
-    return () => subscription.remove();
-  }, []);
+    if (!hasPermission) {requestPermission();}
+  }, [hasPermission, requestPermission]);
 
-  // Request camera permission
-  useEffect(() => {
-    (async () => {
-      const permission = await Camera.requestCameraPermission();
-      setHasPermission(permission === 'granted');
-    })();
-  }, []);
+  // Вибір задньої камери (ширококутної)
+  const device = useCameraDevice('back', {
+    physicalDevices: ['wide-angle-camera'],
+  });
 
-  // Select camera format based on aspect ratio
+  // Дебагінг доступних форматів
   useEffect(() => {
-    if (device && device.formats.length > 0) {
-      const selectedRatio = ASPECT_RATIOS.find(r => r.label === selectedAspectRatio)?.value || 4 / 3;
-      const format = device.formats.find((f) => {
-        const formatAspectRatio = f.videoWidth / f.videoHeight;
-        return Math.abs(formatAspectRatio - selectedRatio) < 0.1;
-      }) || device.formats[0];
-      setSelectedFormat(format);
+    if (device) {
+      console.log('Доступні формати камери:', JSON.stringify(device.formats, null, 2));
     }
-  }, [device, selectedAspectRatio]);
+  }, [device]);
 
-  // Calculate zoom
+  // Вибір формату з чітким пріоритетом співвідношення сторін
+  const format = useCameraFormat(device, [
+    { videoAspectRatio: aspectRatio === '4:3' ? 4 / 3 : 16 / 9 },
+    { videoResolution: { width: 1920, height: 1080 } }, // Спробувати 1080p
+    { videoResolution: { width: 1440, height: 1080 } }, // Альтернатива для 4:3
+    { videoResolution: { width: 1280, height: 720 } }, // Спробувати 720p
+    { fps: 30 },
+  ]);
+
+  // Дебагінг обраного формату
   useEffect(() => {
-    const camera = CAMERAS.find(c => c.label === selectedCamera);
-    const lens = LENS_OPTIONS.find(l => l.label === selectedLens);
-
-    if (camera && lens && phoneFocalLength) {
-      const targetEq = lens.focalLength * camera.cropFactor;
-      const calculatedZoom = targetEq / phoneFocalLength;
-      setZoom(Math.min(Math.max(device?.minZoom || 1, calculatedZoom), device?.maxZoom || 16));
+    if (format) {
+      console.log('Обраний формат:', JSON.stringify(format, null, 2));
     }
-  }, [selectedCamera, selectedLens, phoneFocalLength, device]);
+  }, [format]);
 
-  // Calculate camera view dimensions based on format
-  const getCameraDimensions = () => {
-    const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-    const aspectRatio = selectedFormat ? selectedFormat.videoWidth / selectedFormat.videoHeight : 4 / 3;
-
-    let cameraWidth = screenWidth * 0.8; // Use 80% of screen width
-    let cameraHeight = cameraWidth / aspectRatio;
-
-    // Adjust if height exceeds screen height
-    if (cameraHeight > screenHeight * 0.8) {
-      cameraHeight = screenHeight * 0.8;
-      cameraWidth = cameraHeight * aspectRatio;
+  // Отримання фізичної фокусної відстані
+  useEffect(() => {
+    if (format?.focalLength) {
+      setFocalLength(format.focalLength);
+    } else {
+      setFocalLength(4);
     }
+  }, [format]);
 
-    return { width: cameraWidth, height: cameraHeight };
-  };
+  // Розрахунок еквівалентної фокусної відстані та зуму
+  useEffect(() => {
+    if (!focalLength) {return;}
 
-  if (!device || !hasPermission) {
-    return <Text style={styles.text}>Waiting for camera permission...</Text>;
-  }
+    const fullFrameDiagonal = 43.3;
+    const cropFactor = fullFrameDiagonal / sensorDiagonal;
+    const equivalent = focalLength * cropFactor;
+    setEquivalentFocalLength(equivalent);
 
-  const cameraDimensions = getCameraDimensions();
+    const zoomFactor = selectedLens / equivalent;
+    setZoom(Math.max(1, zoomFactor));
+  }, [focalLength, sensorDiagonal, selectedLens]);
+
+  if (!hasPermission || !device) {return null;}
 
   return (
-    <View style={styles.container}>
-      <View style={styles.cameraContainer}>
+    <SafeAreaView style={{ flex: 1, flexDirection: 'row', padding: 16 }}>
+      <View style={[styles.cameraContainer]}>
         <Camera
-          style={[styles.camera, {
-            width: cameraDimensions.width,
-            height: cameraDimensions.height,
-          }]}
+          key={aspectRatio} // Примусове оновлення компонента при зміні aspectRatio
+          ref={cameraRef}
+          format={format}
+          resizeMode="contain"
+          zoom={zoom}
+          style={{flex: 1,}}
           device={device}
           isActive={true}
-          zoom={zoom}
-          format={selectedFormat}
         />
       </View>
-      <View style={[styles.pickerContainer, orientation === 'landscape' ? styles.pickerContainerLandscape : {}]}>
-        <Text style={styles.label}>Select Camera</Text>
-        <Picker
-          selectedValue={selectedCamera}
-          onValueChange={(itemValue) => setSelectedCamera(itemValue)}
-          style={styles.picker}
-        >
-          {CAMERAS.map((cam) => (
-            <Picker.Item key={cam.label} label={cam.label} value={cam.label} />
-          ))}
-        </Picker>
 
-        <Text style={styles.label}>Select Lens</Text>
-        <Picker
-          selectedValue={selectedLens}
-          onValueChange={(itemValue) => setSelectedLens(itemValue)}
-          style={styles.picker}
-        >
-          {LENS_OPTIONS.map((lens) => (
-            <Picker.Item key={lens.label} label={lens.label} value={lens.label} />
-          ))}
-        </Picker>
+      <View style={styles.controlsContainer}>
+        {/* Вибір співвідношення сторін */}
+        <View style={styles.aspectRatioContainer}>
+          <Text style={styles.label}>Співвідношення сторін:</Text>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[styles.button, aspectRatio === '4:3' ? styles.buttonActive : null]}
+              onPress={() => setAspectRatio('4:3')}
+            >
+              <Text style={styles.buttonText}>4:3</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, aspectRatio === '16:9' ? styles.buttonActive : null]}
+              onPress={() => setAspectRatio('16:9')}
+            >
+              <Text style={styles.buttonText}>16:9</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-        <Text style={styles.label}>Select Format</Text>
-        <Picker
-          selectedValue={selectedAspectRatio}
-          onValueChange={(itemValue) => setSelectedAspectRatio(itemValue)}
-          style={styles.picker}
-        >
-          {ASPECT_RATIOS.map((ratio) => (
-            <Picker.Item key={ratio.label} label={ratio.label} value={ratio.label} />
-          ))}
-        </Picker>
+        {/* Вибір повнокадрового об’єктива */}
+        <View style={styles.lensContainer}>
+          <Text style={styles.label}>Об'єктив:</Text>
+          <Picker
+            selectedValue={selectedLens}
+            style={styles.picker}
+            onValueChange={(value) => setSelectedLens(value)}
+          >
+            <Picker.Item label="24 мм" value={24} />
+            <Picker.Item label="35 мм" value={35} />
+            <Picker.Item label="50 мм" value={50} />
+          </Picker>
+        </View>
 
-        <Text style={styles.debugText}>
-          Zoom: {zoom.toFixed(2)}x | {selectedLens} on {selectedCamera} | Format: {selectedAspectRatio}
-          {selectedFormat ? ` (${selectedFormat.videoWidth}x${selectedFormat.videoHeight})` : ''}
-        </Text>
+        {/* Інформація */}
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoText}>Фокусна відстань: {focalLength?.toFixed(2)} мм</Text>
+          <Text style={styles.infoText}>Діагональ сенсора: {sensorDiagonal.toFixed(2)} мм</Text>
+          <Text style={styles.infoText}>Еквівалент FF: {equivalentFocalLength?.toFixed(2)} мм</Text>
+          <Text style={styles.infoText}>Зум: {zoom.toFixed(2)}x</Text>
+          <Text style={styles.infoText}>Співвідношення: {aspectRatio}</Text>
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'black',
-  },
   cameraContainer: {
+    padding: 16,
     flex: 1,
-    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  controlsContainer: {
+    flex: 1,
+    backgroundColor: 'white',
+    padding: 12,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  aspectRatioContainer: {
+    marginBottom: 10,
+  },
+  lensContainer: {
+    marginBottom: 10,
+  },
+  infoContainer: {
+    marginTop: 10,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  button: {
+    padding: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: 5,
+    marginHorizontal: 5,
+    minWidth: 80,
     alignItems: 'center',
-    backgroundColor: 'black', // Black letterbox
   },
-  camera: {
-    borderWidth: 1,
-    borderColor: 'white', // Optional: visual border for clarity
+  buttonActive: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
-  text: {
-    marginTop: 100,
-    textAlign: 'center',
-    fontSize: 18,
-    color: 'white',
-  },
-  pickerContainer: {
-    position: 'absolute',
-    bottom: 20,
-    width: '100%',
-    paddingHorizontal: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 10,
-    paddingVertical: 10,
-  },
-  pickerContainerLandscape: {
-    bottom: 'auto',
-    top: 20,
-    right: 20,
-    width: 250,
-    paddingHorizontal: 10,
+  buttonText: {
+    color: 'black',
+    fontSize: 16,
   },
   label: {
-    color: 'white',
+    color: 'black',
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 5,
-    marginTop: 5,
   },
   picker: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    color: 'white',
-    marginBottom: 10,
+    color: 'black',
     borderRadius: 5,
   },
-  debugText: {
-    color: 'white',
-    fontSize: 12,
-    marginTop: 10,
-    textAlign: 'center',
+  infoText: {
+    color: 'black',
+    fontSize: 14,
+    marginVertical: 2,
   },
 });
+
+export default App;
