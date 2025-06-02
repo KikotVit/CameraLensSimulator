@@ -11,6 +11,8 @@ import {
 import { Camera, useCameraDevice, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Exif from 'react-native-exif';
+import { SelectionList } from './components';
+import { ASPECT_RATIOS, CROP_FACTORS } from '../constatns/constants';
 
 const getAdjustedZoom = (lens: number, focalLength: number, device: any) => {
   const factor = lens / focalLength;
@@ -35,8 +37,8 @@ export const CameraScreen = () => {
 
   const [lens, setLens] = useState(24);
   const [zoom, setZoom] = useState(1);
-  const [aspectRatio, setAspectRatio] = useState('4:3');
-  const [cropFactor, setCropFactor] = useState(1.0);
+  const [aspectRatio, setAspectRatio] = useState(0); // 0 for 4:3, 1 for 16:9
+  const [cropFactor, setCropFactor] = useState(1.0); // Default crop factor for full frame
   const [equivalentFocal, setEquivalentFocal] = useState<number | null>(null);
   const [cameraType, setCameraType] = useState<'wide-angle-camera' | 'ultra-wide-angle-camera'>('wide-angle-camera');
   const [isPhotoTaken, setPhotoTaken] = useState(false);
@@ -52,7 +54,7 @@ export const CameraScreen = () => {
   const availableLenses = ultraWideCamera ? [16, 24, 35, 50] : [35, 50];
   const device = lens * cropFactor < 28 && ultraWideCamera ? ultraWideCamera : wideCamera;
   const format = useCameraFormat(device, [
-    { photoAspectRatio: aspectRatio === '4:3' ? 4 / 3 : 16 / 9 },
+    { photoAspectRatio: aspectRatio === 0 ? 4 / 3 : 16 / 9 },
     { photoResolution: 'max', videoResolution: 'max' },
     { fps: 30 },
   ]);
@@ -141,69 +143,26 @@ export const CameraScreen = () => {
 
       <View style={styles.controlsContainer}>
         {/* Crop factor */}
-        <View>
-          <Text style={styles.label}>Crop Factor:</Text>
-          <FlatList
-            horizontal
-            data={[
-              { label: 'Full Frame (1.0×)', value: 1 },
-              { label: 'Canon APS-C (1.6×)', value: 1.6 },
-              { label: 'Sony/Nikon APS-C (1.5×)', value: 1.5 },
-              { label: 'Micro Four Thirds (2.0×)', value: 2 },
-            ]}
-            contentContainerStyle={{ gap: 10 }}
-            keyExtractor={item => item.value.toString()}
-            showsHorizontalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.button, cropFactor === item.value && styles.buttonActive]}
-                onPress={() => setCropFactor(item.value)}
-              >
-                <Text style={styles.buttonText}>{item.label}</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
+        <SelectionList 
+          data={CROP_FACTORS}
+          label='Crop Factor'
+          activeValue={cropFactor}
+          onPress={setCropFactor}
+        />
         {/* Aspect Ratio */}
-        <View>
-          <Text style={styles.label}>Aspect Ratio:</Text>
-          <FlatList
-            horizontal
-            data={['4:3', '16:9']}
-            contentContainerStyle={{ gap: 10 }}
-            keyExtractor={item => item}
-            showsHorizontalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.button, aspectRatio === item && styles.buttonActive]}
-                onPress={() => setAspectRatio(item)}
-              >
-                <Text style={styles.buttonText}>{item}</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-
+        <SelectionList 
+          data={ASPECT_RATIOS}
+          label='Aspect Ratio'
+          activeValue={aspectRatio}
+          onPress={setAspectRatio}
+        />
         {/* Lens Selection */}
-        <View>
-          <Text style={styles.label}>Lens:</Text>
-          <FlatList
-            horizontal
-            data={availableLenses}
-            keyExtractor={item => item.toString()}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 10 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.button, lens === item && styles.buttonActive]}
-                onPress={() => setLens(item)}
-              >
-                <Text style={styles.buttonText}>{item} mm</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-
+        <SelectionList 
+          data={availableLenses.map(l => ({ label: `${l} mm`, value: l }))}
+          label='Lens'
+          activeValue={lens}
+          onPress={setLens}
+        />
         {/* Info */}
         <View>
           <Text style={styles.infoText}>FF Equivalent: {(lens * cropFactor)?.toFixed(2) || 'N/A'} mm</Text>
