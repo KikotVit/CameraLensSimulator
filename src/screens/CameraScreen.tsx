@@ -46,6 +46,7 @@ export const CameraScreen = () => {
   const { hasPermission, requestPermission } = useCameraPermission();
 
   const wideCamera = useCameraDevice('back', { physicalDevices: ['wide-angle-camera'] });
+  
   const ultraWideCamera = useCameraDevice('back', { physicalDevices: ['ultra-wide-angle-camera'] });
 
   const availableLenses = ultraWideCamera ? [16, 24, 35, 50] : [35, 50];
@@ -85,7 +86,7 @@ export const CameraScreen = () => {
     } else if (equivalentFocal) {
       setZoom(getAdjustedZoom(lens, equivalentFocal, device));
     }
-  }, [lens, ultraWideCamera, wideCamera, cameraType, device]);
+  }, [lens, ultraWideCamera, wideCamera, cameraType, device, cropFactor]);
 
   useEffect(() => {
     if (isPending && cameraRef.current) takePhoto();
@@ -115,7 +116,7 @@ export const CameraScreen = () => {
           format={format}
           photo
           resizeMode='contain'
-          zoom={zoom}
+          zoom={zoom * cropFactor}
           style={{ flex: 1 }}
           device={device}
           isActive
@@ -133,7 +134,6 @@ export const CameraScreen = () => {
               { label: 'Canon APS-C (1.6×)', value: 1.6 },
               { label: 'Sony/Nikon APS-C (1.5×)', value: 1.5 },
               { label: 'Micro Four Thirds (2.0×)', value: 2 },
-              { label: '1" Sensor (2.7×)', value: 2.7 },
             ]}
             contentContainerStyle={{ gap: 10 }}
             keyExtractor={item => item.value.toString()}
@@ -190,8 +190,8 @@ export const CameraScreen = () => {
 
         {/* Info */}
         <View>
-          <Text style={styles.infoText}>FF Equivalent: {equivalentFocal?.toFixed(2) || 'N/A'} mm</Text>
-          <Text style={styles.infoText}>Zoom: {zoom.toFixed(2)}x</Text>
+          <Text style={styles.infoText}>FF Equivalent: {(lens * cropFactor)?.toFixed(2) || 'N/A'} mm</Text>
+          <Text style={styles.infoText}>Zoom: {(zoom * cropFactor).toFixed(2)}x</Text>
           <Text style={styles.infoText}>Aspect Ratio: {aspectRatio}</Text>
           <Text style={styles.infoText}>Camera: {cameraType.includes('ultra') ? 'Ultra-wide' : 'Wide'}</Text>
           <Text style={styles.infoText}>Status: {isPending ? 'Updating data...' : 'Camera data collected'}</Text>
