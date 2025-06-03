@@ -2,17 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
-  TouchableOpacity,
   ActivityIndicator,
-  useColorScheme,
   StyleSheet,
+  TouchableOpacity,
+  Linking,
 } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
+import { Camera, CameraDeviceFormat, useCameraDevice, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Exif from 'react-native-exif';
 import { SelectionList } from './components';
 import { ASPECT_RATIOS, CROP_FACTORS } from '../constatns/constants';
+import { Button } from '../components/button/button';
 
 const getAdjustedZoom = (lens: number, focalLength: number, device: any) => {
   const factor = lens / focalLength;
@@ -33,7 +33,6 @@ const getFocalLengthFromExif = async (uri: string, selectedCameraType: string): 
 
 export const CameraScreen = () => {
   const insets = useSafeAreaInsets();
-  const isDarkMode = useColorScheme() === 'dark';
 
   const [lens, setLens] = useState(24);
   const [zoom, setZoom] = useState(1);
@@ -43,6 +42,8 @@ export const CameraScreen = () => {
   const [cameraType, setCameraType] = useState<'wide-angle-camera' | 'ultra-wide-angle-camera'>('wide-angle-camera');
   const [isPhotoTaken, setPhotoTaken] = useState(false);
   const [isPending, setPending] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState<CameraDeviceFormat>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const cameraRef = useRef<Camera | null>(null);
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -51,13 +52,52 @@ export const CameraScreen = () => {
   
   const ultraWideCamera = useCameraDevice('back', { physicalDevices: ['ultra-wide-angle-camera'] });
 
-  const availableLenses = ultraWideCamera ? [16, 24, 35, 50] : [35, 50];
+  const availableLenses = ultraWideCamera ? [16, 24, 35, 50, 70, 85, 100, 135] : [35, 50, 70, 85, 100, 135];
   const device = lens * cropFactor < 28 && ultraWideCamera ? ultraWideCamera : wideCamera;
-  const format = useCameraFormat(device, [
-    { photoAspectRatio: aspectRatio === 0 ? 4 / 3 : 16 / 9 },
-    { photoResolution: 'max', videoResolution: 'max' },
-    { fps: 30 },
-  ]);
+
+  // const format = useCameraFormat(device, [
+  //   { photoAspectRatio: aspectRatio === 0 ? 4 / 3 : 16 / 9 },
+  //   { photoResolution: 'max', videoResolution: 'max' },
+  //   { fps: 30 },
+  // ]);
+
+  // Select camera format based on aspect ratio
+  useEffect(() => {
+    setIsLoading(true);
+    if (device && device.formats.length > 0) {
+      console.log('Available formats:', device.formats.map(f => ({
+        videoWidth: f.videoWidth,
+        videoHeight: f.videoHeight,
+        aspectRatio: f.videoWidth / f.videoHeight,
+        photoWidth: f.photoWidth,
+        photoHeight: f.photoHeight,
+      })));
+
+      const selectedRatio = ASPECT_RATIOS.find(r => r.value === aspectRatio)?.value === 0 ? 4 / 3 : 16 / 9;
+      const formats = device.formats
+        .filter((f) => {
+          const formatAspectRatio = f.photoWidth / f.photoHeight;
+          return Math.abs(formatAspectRatio - selectedRatio) < 0.1;
+        })
+        .sort((a, b) => b.videoWidth - a.videoWidth);
+      console.log('formats: ', formats);
+
+      const selectedFormat = formats[0] || device.formats[0];
+      console.log('Selected format:', {
+        videoWidth: selectedFormat.videoWidth,
+        videoHeight: selectedFormat.videoHeight,
+        aspectRatio: selectedFormat.videoWidth / selectedFormat.videoHeight,
+        photoWidth: selectedFormat.photoWidth,
+        photoHeight: selectedFormat.photoHeight,
+      });
+      setSelectedFormat(selectedFormat);
+      setTimeout(() => setIsLoading(false), 2000);
+    }
+  }, [device, aspectRatio]);
+
+  useEffect(() => {
+    console.log('Current format:', selectedFormat);
+  }, [selectedFormat]);
 
   useEffect(() => {
     requestPermission().then(granted => {
@@ -67,6 +107,11 @@ export const CameraScreen = () => {
     });
   }, [requestPermission]);
 
+  const openSettings = () => {
+    Linking.openSettings().catch(err => {
+      console.error('Failed to open settings:', err);
+    });
+  };
   useEffect(() => {
     if (!device || !wideCamera) return;
 
@@ -116,6 +161,11 @@ export const CameraScreen = () => {
         <Text style={styles.errorText}>
           {!hasPermission ? 'No permission to use camera' : 'Camera unavailable'}
         </Text>
+        <Button
+          text='Open Settings'
+          onPress={openSettings}
+          style={{ marginTop: 20 }}
+        />
       </View>
     );
   }
@@ -123,7 +173,7 @@ export const CameraScreen = () => {
   return (
     <View style={[styles.root, { paddingTop: 16, paddingBottom: 16, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <View style={styles.cameraContainer}>
-        {!equivalentFocal && (
+        {isLoading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator />
           </View>
@@ -131,7 +181,7 @@ export const CameraScreen = () => {
         <Camera
           key={`${aspectRatio}-${cameraType}`}
           ref={cameraRef}
-          format={format}
+          format={selectedFormat}
           photo
           resizeMode='contain'
           zoom={zoom}
@@ -139,6 +189,18 @@ export const CameraScreen = () => {
           device={device}
           isActive
         />
+        {/* Info */}
+        {
+          equivalentFocal && (
+            <View style={{ position: 'absolute', opacity: 0.5, backgroundColor: 'black', padding: 6, borderRadius:4, bottom: aspectRatio === 1 ? 50 : 10, left: 30 }}>
+              <Text style={styles.infoText}>FF Equivalent: {(lens * cropFactor)?.toFixed(2) || 'N/A'} mm</Text>
+              <Text style={styles.infoText}>Zoom: {(zoom).toFixed(2)}x</Text>
+              <Text style={styles.infoText}>Aspect Ratio: {aspectRatio}</Text>
+              <Text style={styles.infoText}>Camera: {cameraType.includes('ultra') ? 'Ultra-wide' : 'Wide'}</Text>
+            </View>
+          )
+        }
+       
       </View>
 
       <View style={styles.controlsContainer}>
@@ -154,7 +216,10 @@ export const CameraScreen = () => {
           data={ASPECT_RATIOS}
           label='Aspect Ratio'
           activeValue={aspectRatio}
-          onPress={setAspectRatio}
+          onPress={(n) => {
+            setIsLoading(true);
+            setAspectRatio(n);
+          }}
         />
         {/* Lens Selection */}
         <SelectionList 
@@ -163,20 +228,6 @@ export const CameraScreen = () => {
           activeValue={lens}
           onPress={setLens}
         />
-        {/* Info */}
-        <View>
-          <Text style={styles.infoText}>FF Equivalent: {(lens * cropFactor)?.toFixed(2) || 'N/A'} mm</Text>
-          <Text style={styles.infoText}>Zoom: {(zoom).toFixed(2)}x</Text>
-          <Text style={styles.infoText}>Aspect Ratio: {aspectRatio}</Text>
-          <Text style={styles.infoText}>Camera: {cameraType.includes('ultra') ? 'Ultra-wide' : 'Wide'}</Text>
-          <Text style={styles.infoText}>Status: {isPending ? 'Updating data...' : 'Camera data collected'}</Text>
-          {wideCamera?.neutralZoom && (
-            <Text style={styles.infoText}>Neutral Zoom (wide): {wideCamera.neutralZoom.toFixed(2)}x</Text>
-          )}
-          {ultraWideCamera?.neutralZoom && (
-            <Text style={styles.infoText}>Neutral Zoom (ultra-wide): {ultraWideCamera.neutralZoom.toFixed(2)}x</Text>
-          )}
-        </View>
       </View>
     </View>
   );
@@ -199,20 +250,6 @@ const styles =  StyleSheet.create({
     flex: 0.3,
     justifyContent: 'flex-start',
     rowGap: 10,
-  },
-  button: {
-    padding: 10,
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    borderRadius: 5,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  buttonActive: {
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
   },
   label: {
     color: 'white',

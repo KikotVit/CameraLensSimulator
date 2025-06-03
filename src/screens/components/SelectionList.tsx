@@ -1,5 +1,6 @@
 import React from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Button } from '../../components/button/button';
 
 interface ISelectionListProps {
   data: { label: string; value: number }[];
@@ -23,12 +24,12 @@ export const SelectionList = (props: ISelectionListProps) => {
         keyExtractor={item => item.value.toString()}
         showsHorizontalScrollIndicator={false}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.button, activeValue === item.value && styles.buttonActive]}
+          <Button
+            text={item.label}
             onPress={() => onPress(item.value)}
-          >
-            <Text style={styles.buttonText}>{item.label}</Text>
-          </TouchableOpacity>
+            textStyle={styles.buttonText}
+            disabled={activeValue === item.value}
+          />
         )}
       />
     </View>
